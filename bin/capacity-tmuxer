@@ -70,9 +70,13 @@ if [ "${#WHITELIST[@]}" -eq 0 ]; then
   echo "try: capacity-tmuxer --help" >&2
   exit 2
 fi
-declare -A armed backoff last_ts
-
 now() { date +%s; }
+
+# Per-pane state without associative arrays, so this runs on bash 3.2 (macOS
+# system bash). Keys are pane targets like "43:0.0"; sanitize to a valid var name.
+_key() { printf '%s' "${1//[!a-zA-Z0-9]/_}"; }
+sget() { local v="$1_$(_key "$2")"; printf '%s' "${!v:-$3}"; }   # prefix key default
+sset() { printf -v "$1_$(_key "$2")" '%s' "$3"; }                # prefix key value
 
 panes_of() { # session -> one "session:window.pane" target per line
   tmux list-panes -s -t "$1" -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null
@@ -158,24 +162,27 @@ while true; do
       slice=$(tmux capture-pane -p -t "$pane" 2>/dev/null | tail -n "$WINDOW") || continue
 
       if grep -qi "$BUSY_RE" <<<"$slice"; then
-        armed[$pane]=1          # working -> re-arm for the next stall
+        sset armed "$pane" 1     # working -> re-arm for the next stall
         continue
       fi
 
       if grep -qi "$CAP_RE" <<<"$slice"; then
-        : "${armed[$pane]:=1}" "${backoff[$pane]:=$BACKOFF_START}" "${last_ts[$pane]:=0}"
-        if [ "${armed[$pane]}" = 1 ] && [ $(( $(now) - last_ts[$pane] )) -ge "${backoff[$pane]}" ]; then
+        armed_v=$(sget armed "$pane" 1)
+        backoff_v=$(sget backoff "$pane" "$BACKOFF_START")
+        last_v=$(sget last_ts "$pane" 0)
+        if [ "$armed_v" = 1 ] && [ $(( $(now) - last_v )) -ge "$backoff_v" ]; then
           if [ "$GUARD_COMPOSER" = 1 ] && ! composer_is_empty "$pane"; then
             printf '%s  skip %s: composer not empty (guard)\n' "$(date +%T)" "$pane"
             continue
           fi
           send_continue "$pane"
-          last_ts[$pane]=$(now)
-          armed[$pane]=0
-          backoff[$pane]=$(( backoff[$pane] * 2 ))
-          [ "${backoff[$pane]}" -gt "$BACKOFF_MAX" ] && backoff[$pane]=$BACKOFF_MAX
+          sset last_ts "$pane" "$(now)"
+          sset armed "$pane" 0
+          backoff_v=$(( backoff_v * 2 ))
+          [ "$backoff_v" -gt "$BACKOFF_MAX" ] && backoff_v=$BACKOFF_MAX
+          sset backoff "$pane" "$backoff_v"
           printf '%s  sent "%s" -> %s (next backoff %ss)\n' \
-            "$(date +%T)" "$SEND_TEXT" "$pane" "${backoff[$pane]}"
+            "$(date +%T)" "$SEND_TEXT" "$pane" "$backoff_v"
         fi
       fi
     done < <(panes_of "$sess")
