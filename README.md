@@ -26,7 +26,7 @@ agents in tmux panes and point this tool at their sessions.
 ## Requirements
 
 - `tmux`
-- `bash` 3.2+ (works with macOS's built-in `/bin/bash`)
+- `bash`
 - Codex CLI running **inside** tmux panes
 
 ## Install

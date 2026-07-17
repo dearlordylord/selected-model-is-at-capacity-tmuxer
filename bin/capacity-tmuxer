@@ -72,8 +72,9 @@ if [ "${#WHITELIST[@]}" -eq 0 ]; then
 fi
 now() { date +%s; }
 
-# Per-pane state without associative arrays, so this runs on bash 3.2 (macOS
-# system bash). Keys are pane targets like "43:0.0"; sanitize to a valid var name.
+# Per-pane state without associative arrays, so this runs on any bash (including
+# the older one macOS ships). Keys are pane targets like "43:0.0"; sanitize to a
+# valid var name.
 _key() { printf '%s' "${1//[!a-zA-Z0-9]/_}"; }
 sget() { local v="$1_$(_key "$2")"; printf '%s' "${!v:-$3}"; }   # prefix key default
 sset() { printf -v "$1_$(_key "$2")" '%s' "$3"; }                # prefix key value
