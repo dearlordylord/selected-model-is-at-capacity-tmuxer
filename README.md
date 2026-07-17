@@ -56,6 +56,30 @@ tail -f ~/capacity-tmuxer.log
 
 `--help` prints the full option list.
 
+### Live status pane (optional)
+
+Codex renders inline, so its own status bar isn't pinned. `--status-pane` gives
+you a synthesized one: a live, refreshing readout of every watched pane's state
+(`WORKING` / `IDLE` / `CAPACITY`). Run it in a small split you keep at the bottom:
+
+```sh
+# split off a short pane and run the readout in it
+tmux split-window -v -l 8 'capacity-tmuxer --status-pane 43 44'
+```
+
+```
+capacity-tmuxer  13:01:06   sessions: 43 44 40   (refresh 2s)
+
+PANE                STATE      DETAIL
+------              -----      ------
+43:0.0              CAPACITY   at capacity — waiting to resubmit
+44:0.0              WORKING    • Working (25s • esc to interrupt)
+40:0.0              IDLE
+```
+
+This mode is read-only — it never sends keys. Run it alongside the watcher (they
+are independent processes).
+
 ## How it decides to send (only when it's *fresh*)
 
 The capacity string has no "freshness" token, so the tool never fires on the mere
@@ -89,7 +113,8 @@ All tunables are environment variables:
 
 | Var | Default | Meaning |
 |---|---|---|
-| `POLL` | `15` | seconds between scans |
+| `POLL` | `15` | seconds between scans (watch mode) |
+| `STATUS_POLL` | `2` | seconds between refreshes (`--status-pane` mode) |
 | `WINDOW` | `20` | bottom lines that count as "current/last" |
 | `CAP_RE` | `Selected model is at capacity` | capacity message to match (`grep -i`) |
 | `BUSY_RE` | `esc to interrupt` | present == Codex is working |

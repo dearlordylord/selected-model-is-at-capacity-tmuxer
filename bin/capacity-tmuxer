@@ -11,12 +11,18 @@
 #   3. edge     — fire once on entering the stalled state, then re-arm only after
 #      Codex is seen working again. Exponential backoff bounds re-sends.
 #
-# Usage: capacity-tmuxer [SESSION ...]
+# Usage: capacity-tmuxer [--status-pane|-s] [SESSION ...]
 #   Sessions are the whitelist. With none given, falls back to $WATCH_SESSIONS
 #   (space/comma separated). At least one session is required.
 #
+#   Default mode watches the sessions and auto-resubmits on capacity stalls.
+#   --status-pane instead renders a live one-screen readout of every watched
+#   pane's state (WORKING / IDLE / CAPACITY) — run it in a split you keep at the
+#   bottom to get the "pinned status bar" Codex's inline TUI doesn't provide.
+#
 # Tunables (env vars, with defaults):
-#   POLL=15            seconds between scans
+#   POLL=15            seconds between scans (watch mode)
+#   STATUS_POLL=2      seconds between refreshes (--status-pane mode)
 #   WINDOW=20          bottom lines that count as "current/last"
 #   CAP_RE='Selected model is at capacity'   capacity message to match (grep -i)
 #   BUSY_RE='esc to interrupt'               present == Codex is working
@@ -29,13 +35,14 @@ set -uo pipefail
 
 case "${1:-}" in
   -h|--help)
-    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
 esac
 
 # ---- config (env-overridable) ----------------------------------------------
 POLL=${POLL:-15}
+STATUS_POLL=${STATUS_POLL:-2}
 WINDOW=${WINDOW:-20}
 CAP_RE=${CAP_RE:-'Selected model is at capacity'}
 BUSY_RE=${BUSY_RE:-'esc to interrupt'}
@@ -47,6 +54,12 @@ GUARD_COMPOSER=${GUARD_COMPOSER:-1}
 
 command -v tmux >/dev/null 2>&1 || { echo "error: tmux not found in PATH" >&2; exit 127; }
 
+# mode flag (must precede the session list)
+STATUS_MODE=0
+case "${1:-}" in
+  --status-pane|-s) STATUS_MODE=1; shift ;;
+esac
+
 # whitelist from args, else $WATCH_SESSIONS (comma/space separated)
 WHITELIST=("$@")
 if [ "${#WHITELIST[@]}" -eq 0 ]; then
@@ -57,11 +70,50 @@ if [ "${#WHITELIST[@]}" -eq 0 ]; then
   echo "try: capacity-tmuxer --help" >&2
   exit 2
 fi
-printf 'watching sessions: %s  (poll %ss, cap_re=%q)\n' "${WHITELIST[*]}" "$POLL" "$CAP_RE"
-
 declare -A armed backoff last_ts
 
 now() { date +%s; }
+
+panes_of() { # session -> one "session:window.pane" target per line
+  tmux list-panes -s -t "$1" -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null
+}
+
+# pane -> "STATE|detail"; STATE in WORKING | CAPACITY | IDLE | GONE
+classify() {
+  local pane="$1" slice line
+  slice=$(tmux capture-pane -p -t "$pane" 2>/dev/null | tail -n "$WINDOW") || { printf 'GONE|'; return; }
+  if grep -qi "$BUSY_RE" <<<"$slice"; then
+    line=$(grep -i -m1 "$BUSY_RE" <<<"$slice" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+    printf 'WORKING|%s' "$line"
+  elif grep -qi "$CAP_RE" <<<"$slice"; then
+    printf 'CAPACITY|at capacity — waiting to resubmit'
+  else
+    printf 'IDLE|'
+  fi
+}
+
+# Live one-screen readout of every watched pane. Runs until interrupted.
+run_status_pane() {
+  local sess pane rec state detail
+  printf '\033[?25l'                                   # hide cursor
+  trap 'printf "\033[?25h\n"' EXIT                     # always restore cursor
+  trap 'exit 0' INT TERM                               # ...and actually exit on signal
+  while true; do
+    printf '\033[H\033[2J'                             # home + clear
+    printf 'capacity-tmuxer  %s   sessions: %s   (refresh %ss)\n\n' \
+      "$(date '+%H:%M:%S')" "${WHITELIST[*]}" "$STATUS_POLL"
+    printf '%-18s  %-9s  %s\n' PANE STATE DETAIL
+    printf '%-18s  %-9s  %s\n' '------' '-----' '------'
+    for sess in "${WHITELIST[@]}"; do
+      while IFS= read -r pane; do
+        [ -n "$pane" ] || continue
+        rec=$(classify "$pane"); state=${rec%%|*}; detail=${rec#*|}
+        printf '%-18s  %-9s  %s\n' "$pane" "$state" "$detail"
+      done < <(panes_of "$sess")
+    done
+    sleep "$STATUS_POLL"
+  done
+}
 
 PROMPT_GLYPH=$'\xe2\x80\xba'   # the Codex composer prompt: ›
 DIM=$'\x1b[2m'                 # SGR faint — how Codex renders the empty placeholder
@@ -91,6 +143,13 @@ send_continue() {
   tmux send-keys -t "$pane" Enter
 }
 
+if [ "$STATUS_MODE" = 1 ]; then
+  run_status_pane
+  exit 0
+fi
+
+printf 'watching sessions: %s  (poll %ss, cap_re=%q)\n' "${WHITELIST[*]}" "$POLL" "$CAP_RE"
+
 while true; do
   for sess in "${WHITELIST[@]}"; do
     # all panes in this session, across its windows
@@ -119,8 +178,7 @@ while true; do
             "$(date +%T)" "$SEND_TEXT" "$pane" "${backoff[$pane]}"
         fi
       fi
-    done < <(tmux list-panes -s -t "$sess" \
-               -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)
+    done < <(panes_of "$sess")
   done
   sleep "$POLL"
 done
