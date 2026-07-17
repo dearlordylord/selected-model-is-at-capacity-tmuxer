@@ -16,6 +16,10 @@ No dependencies beyond `bash`, `tmux`, and `grep`/`sed`. It never touches Codex
 itself; it only reads panes with `tmux capture-pane` and types with
 `tmux send-keys`.
 
+## Demo
+
+![capacity-tmuxer detecting the capacity stall and resubmitting `continue`, so Codex goes back to working](docs/usage-demo.gif)
+
 ## Why tmux
 
 Codex renders its TUI **inline** (not on the alternate screen), so its transcript
