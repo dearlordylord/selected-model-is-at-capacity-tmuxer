@@ -1,0 +1,6 @@
+# logs from running the watcher
+*.log
+
+# editor / OS cruft
+.DS_Store
+*.swp

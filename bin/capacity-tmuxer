@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# capacity-tmuxer — watch whitelisted tmux sessions running the Codex CLI for the
+# "Selected model is at capacity" stall and auto-resubmit so the agent continues.
+#
+# Freshness (send only when the message is *fresh and last*) is decided from three
+# scroll-independent facts, not from the message string itself:
+#   1. position — only the bottom slice of the live frame counts (a message you
+#      scrolled past is not in it);
+#   2. idle     — the busy indicator ("esc to interrupt") must be absent, proving
+#      Codex actually stopped rather than still working;
+#   3. edge     — fire once on entering the stalled state, then re-arm only after
+#      Codex is seen working again. Exponential backoff bounds re-sends.
+#
+# Usage: capacity-tmuxer [SESSION ...]
+#   Sessions are the whitelist. With none given, falls back to $WATCH_SESSIONS
+#   (space/comma separated). At least one session is required.
+#
+# Tunables (env vars, with defaults):
+#   POLL=15            seconds between scans
+#   WINDOW=20          bottom lines that count as "current/last"
+#   CAP_RE='Selected model is at capacity'   capacity message to match (grep -i)
+#   BUSY_RE='esc to interrupt'               present == Codex is working
+#   BACKOFF_START=30   first wait after a send (s)
+#   BACKOFF_MAX=900    backoff ceiling (s)
+#   SEND_TEXT=continue text submitted to resume the agent
+#   GUARD_COMPOSER=1   only send when the input box is the empty (dim) placeholder,
+#                      so a half-typed prompt is never clobbered (fail-safe: skip)
+set -uo pipefail
+
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+    ;;
+esac
+
+# ---- config (env-overridable) ----------------------------------------------
+POLL=${POLL:-15}
+WINDOW=${WINDOW:-20}
+CAP_RE=${CAP_RE:-'Selected model is at capacity'}
+BUSY_RE=${BUSY_RE:-'esc to interrupt'}
+BACKOFF_START=${BACKOFF_START:-30}
+BACKOFF_MAX=${BACKOFF_MAX:-900}
+SEND_TEXT=${SEND_TEXT:-continue}
+GUARD_COMPOSER=${GUARD_COMPOSER:-1}
+# -----------------------------------------------------------------------------
+
+command -v tmux >/dev/null 2>&1 || { echo "error: tmux not found in PATH" >&2; exit 127; }
+
+# whitelist from args, else $WATCH_SESSIONS (comma/space separated)
+WHITELIST=("$@")
+if [ "${#WHITELIST[@]}" -eq 0 ]; then
+  IFS=', ' read -r -a WHITELIST <<<"${WATCH_SESSIONS:-}"
+fi
+if [ "${#WHITELIST[@]}" -eq 0 ]; then
+  echo "error: no sessions given (pass as args or set WATCH_SESSIONS)" >&2
+  echo "try: capacity-tmuxer --help" >&2
+  exit 2
+fi
+printf 'watching sessions: %s  (poll %ss, cap_re=%q)\n' "${WHITELIST[*]}" "$POLL" "$CAP_RE"
+
+declare -A armed backoff last_ts
+
+now() { date +%s; }
+
+PROMPT_GLYPH=$'\xe2\x80\xba'   # the Codex composer prompt: ›
+DIM=$'\x1b[2m'                 # SGR faint — how Codex renders the empty placeholder
+
+# 0 == composer is the empty (dim placeholder) box and is safe to type into.
+# Fail-safe: any parse failure or visible non-dim text returns non-zero (skip).
+composer_is_empty() {
+  local pane="$1" frame line after lead plain
+  frame=$(tmux capture-pane -e -p -t "$pane" 2>/dev/null) || return 1
+  line=$(printf '%s\n' "$frame" | LC_ALL=C grep -aF "$PROMPT_GLYPH" | tail -n1)
+  [ -n "$line" ] || return 1                       # no composer found -> skip
+  after=${line#*"$PROMPT_GLYPH"}                    # text after the prompt glyph
+  # strip leading spaces / reset codes, then: dim run first == placeholder == empty
+  lead=$(printf '%s' "$after" | LC_ALL=C sed -E $'s/^([[:space:]]|\x1b\\[0m)*//')
+  case "$lead" in
+    "$DIM"*) return 0 ;;
+  esac
+  # no leading dim: empty only if there is no visible (non-space) text at all
+  plain=$(printf '%s' "$after" | LC_ALL=C sed -E $'s/\x1b\\[[0-9;]*m//g' | tr -d '[:space:]')
+  [ -z "$plain" ]
+}
+
+send_continue() {
+  local pane="$1"
+  tmux send-keys -t "$pane" "$SEND_TEXT"
+  sleep 0.4                     # let the composer settle before submit
+  tmux send-keys -t "$pane" Enter
+}
+
+while true; do
+  for sess in "${WHITELIST[@]}"; do
+    # all panes in this session, across its windows
+    while IFS= read -r pane; do
+      [ -n "$pane" ] || continue
+      slice=$(tmux capture-pane -p -t "$pane" 2>/dev/null | tail -n "$WINDOW") || continue
+
+      if grep -qi "$BUSY_RE" <<<"$slice"; then
+        armed[$pane]=1          # working -> re-arm for the next stall
+        continue
+      fi
+
+      if grep -qi "$CAP_RE" <<<"$slice"; then
+        : "${armed[$pane]:=1}" "${backoff[$pane]:=$BACKOFF_START}" "${last_ts[$pane]:=0}"
+        if [ "${armed[$pane]}" = 1 ] && [ $(( $(now) - last_ts[$pane] )) -ge "${backoff[$pane]}" ]; then
+          if [ "$GUARD_COMPOSER" = 1 ] && ! composer_is_empty "$pane"; then
+            printf '%s  skip %s: composer not empty (guard)\n' "$(date +%T)" "$pane"
+            continue
+          fi
+          send_continue "$pane"
+          last_ts[$pane]=$(now)
+          armed[$pane]=0
+          backoff[$pane]=$(( backoff[$pane] * 2 ))
+          [ "${backoff[$pane]}" -gt "$BACKOFF_MAX" ] && backoff[$pane]=$BACKOFF_MAX
+          printf '%s  sent "%s" -> %s (next backoff %ss)\n' \
+            "$(date +%T)" "$SEND_TEXT" "$pane" "${backoff[$pane]}"
+        fi
+      fi
+    done < <(tmux list-panes -s -t "$sess" \
+               -F '#{session_name}:#{window_index}.#{pane_index}' 2>/dev/null)
+  done
+  sleep "$POLL"
+done
