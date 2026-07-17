@@ -32,7 +32,7 @@ agents in tmux panes and point this tool at their sessions.
 ## Install
 
 ```sh
-git clone https://github.com/<you>/selected-model-is-at-capacity-tmuxer.git
+git clone https://github.com/dearlordylord/selected-model-is-at-capacity-tmuxer.git
 cd selected-model-is-at-capacity-tmuxer
 chmod +x bin/capacity-tmuxer
 # optional: put it on PATH
