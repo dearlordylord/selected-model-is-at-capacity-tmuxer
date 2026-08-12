@@ -12,9 +12,9 @@ If you run Codex agents inside **tmux** and keep hitting
 sessions, detects the "Selected model is at capacity" stall, and resubmits
 `continue` so the agent keeps going — same model, no babysitting.
 
-No dependencies beyond `bash`, `tmux`, and `grep`/`sed`. It never touches Codex
-itself; it only reads panes with `tmux capture-pane` and types with
-`tmux send-keys`.
+No dependencies beyond `bash`, `tmux`, and standard Unix utilities. It never
+touches Codex itself; it only reads panes with `tmux capture-pane` and types
+with `tmux send-keys`.
 
 ## Demo
 
@@ -31,6 +31,8 @@ agents in tmux panes and point this tool at their sessions.
 
 - `tmux`
 - `bash`
+- Standard Unix utilities (`date`, `dirname`, `grep`, `readlink`, `sed`,
+  `sleep`, and `tail`)
 - Codex CLI running **inside** tmux panes
 
 ## Install
@@ -136,9 +138,20 @@ All tunables are environment variables:
 - **Codex wording.** `CAP_RE` matches the observed string
   `Selected model is at capacity`. If a future Codex build reworks that message,
   update `CAP_RE`.
-- **Composer prompt glyph.** The composer guard keys off Codex's `›` prompt and
-  its dim-placeholder styling. If that rendering changes, set `GUARD_COMPOSER=0`
-  (you lose the half-typed-prompt protection) or adjust the script.
+- **Composer prompt glyph.** The composer guard keys off Codex's `›` and `»`
+  prompt variants and their dim-placeholder styling. Unknown prompt or
+  terminal-format variants fail closed. If Codex's rendering changes, set
+  `GUARD_COMPOSER=0` (you lose the half-typed-prompt protection) or add a prompt
+  strategy and captured-frame fixture.
+
+## Tests
+
+The composer classifier is exercised independently of tmux using captured ANSI
+frames:
+
+```sh
+bash test/composer-guard-test.bash
+```
 
 ## License
 

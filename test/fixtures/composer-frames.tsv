@@ -1,0 +1,28 @@
+# name|expected|captured frame (printf %b escapes)
+standard_empty|empty|status\n\342\200\272\033[0m\033[49m  \033[2mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project
+ultra_empty_rgb|empty|status\n\302\273\033[0m\033[48;2;12;34;56m \033[2mSummarize recent commits\n\n  gpt-5.6-sol ultra · /workspace/project
+formatted_standard_empty|empty|status\n \033[1m\342\200\272\033[22m \033[2mWrite tests for @filename\n\n  gpt-5.6-sol max · /workspace/project
+codex_0147_empty_with_footer|empty|\033[2mCodex welcome\n\033[0;1m\033[39m\033[49m\342\200\272\033[0m\033[39m\033[49m \033[2mWrite tests for @filename\n\n\033[0m\033[39m\033[49m  gpt-5.6-sol default · /workspace/project
+standard_typed|nonempty|status\n\342\200\272 draft response
+ultra_typed|nonempty|status\n\302\273 draft response
+standard_draft_ending_ultra_glyph|nonempty|status\n\342\200\272 draft \302\273
+ultra_draft_ending_standard_glyph|nonempty|status\n\302\273 draft \342\200\272
+rgb_is_not_faint|nonempty|status\n\302\273\033[48;2;2;34;56m Ask Codex
+malformed_rgb|nonempty|status\n\302\273\033[48;2;12;34m \033[2mAsk Codex
+unsupported_sgr|nonempty|status\n\302\273\033[999m \033[2mAsk Codex
+unterminated_sgr|nonempty|status\n\302\273\033[48;2;12;34;56 \033[2mAsk Codex
+glyph_in_transcript|nonempty|output mentions \302\273
+prompt_in_history|nonempty|\342\200\272 previous request
+menu_after_empty_composer|nonempty|\342\200\272\033[0m \033[2mAsk Codex\n\342\200\272 selected menu item
+approval_row|nonempty|Allow command?\n  \342\200\272 Yes, proceed
+embedded_glyph_before_empty_composer|empty|output mentions \302\273 and \342\200\272\n\302\273\033[0m \033[2mFind and fix a bug in @filename\n\n  gpt-5.6-sol ultra · /workspace/project
+shell_mode|nonempty|! echo hello
+empty_suffix_without_placeholder|nonempty|\342\200\272   \033[0m
+malformed_placeholder_tail|nonempty|\342\200\272 \033[2mAsk Codex\033[bogusm
+faint_cancelled_before_draft|nonempty|\342\200\272 \033[2m\033[22mdraft\n\n  gpt-5.6-sol default · /workspace/project
+faint_reset_before_draft|nonempty|\342\200\272 \033[2m\033[0mdraft\n\n  gpt-5.6-sol default · /workspace/project
+dim_prompt_shaped_menu|nonempty|status\n\342\200\272 \033[2mHelp text
+dim_prompt_shaped_history_with_footer_like_text|nonempty|\342\200\272 \033[2mPrevious request\n  gpt-5.6-sol default · /workspace/project
+dim_prompt_shaped_row_with_blank_and_footer|nonempty|\342\200\272 \033[2mHelp text\n\n  gpt-5.6-sol default · /workspace/project
+oversized_sgr_wraps_to_faint|nonempty|\342\200\272 \033[18446744073709551618mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project
+oversized_rgb_mode_wraps_to_two|nonempty|\342\200\272 \033[48;18446744073709551618;1;2;3m \033[2mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project

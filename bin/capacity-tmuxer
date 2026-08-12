@@ -121,38 +121,23 @@ run_status_pane() {
   done
 }
 
-PROMPT_GLYPH_NEW=$'\xc2\xbb'   # current Codex composer prompt: »
-PROMPT_GLYPH_OLD=$'\xe2\x80\xba' # older Codex composer prompt: ›
-DIM=$'\x1b[2m'                 # SGR faint — how Codex renders the empty placeholder
+script_source=${BASH_SOURCE[0]}
+while [ -h "$script_source" ]; do
+  script_dir=$(cd -P "$(dirname "$script_source")" && pwd)
+  script_source=$(readlink "$script_source") || exit 1
+  case "$script_source" in /*) ;; *) script_source=$script_dir/$script_source ;; esac
+done
+script_dir=$(cd -P "$(dirname "$script_source")" && pwd)
+# shellcheck source=../lib/composer-guard.bash
+. "$script_dir/../lib/composer-guard.bash"
+unset script_source script_dir
 
 # 0 == composer is the empty (dim placeholder) box and is safe to type into.
 # Fail-safe: any parse failure or visible non-dim text returns non-zero (skip).
-# Empty shape (current Codex): » + reset/bg SGRs + spaces + \x1b[2m<placeholder>
 composer_is_empty() {
-  local pane="$1" frame line after code
+  local pane="$1" frame
   frame=$(tmux capture-pane -e -p -t "$pane" 2>/dev/null) || return 1
-  line=$(printf '%s\n' "$frame" | LC_ALL=C grep -aE "$PROMPT_GLYPH_NEW|$PROMPT_GLYPH_OLD" | tail -n1)
-  [ -n "$line" ] || return 1                       # no composer found -> skip
-  case "$line" in
-    *"$PROMPT_GLYPH_NEW"*) after=${line#*"$PROMPT_GLYPH_NEW"} ;;
-    *)                     after=${line#*"$PROMPT_GLYPH_OLD"} ;;
-  esac
-  # Peel leading spaces and non-dim SGRs. First content style \x1b[2m == placeholder.
-  # (Must match exact faint SGR — not the "2" inside 48;2;r;g;b background colour.)
-  while [ -n "$after" ]; do
-    after="${after#"${after%%[![:space:]]*}"}"
-    case "$after" in
-      "$DIM"*) return 0 ;;
-      $'\x1b['*)
-        code=${after%%m*}
-        [ "$code" = "$after" ] && return 1          # malformed CSI -> skip
-        after=${after#"$code"m}
-        ;;
-      '') return 0 ;;                              # nothing left
-      *) return 1 ;;                               # typed / non-dim text
-    esac
-  done
-  return 0
+  composer_frame_is_empty "$frame"
 }
 
 send_continue() {
