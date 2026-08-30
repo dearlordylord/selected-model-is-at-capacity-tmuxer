@@ -267,6 +267,7 @@ composer_codex_placeholder_is_empty() {
   done
   text=$(composer_strip_all_formatting "$suffix") || return 1
   case "$text" in
+    'Ask Codex to do anything'|\
     'Explain this codebase'|\
     'Summarize recent commits'|\
     'Implement {feature}'|\

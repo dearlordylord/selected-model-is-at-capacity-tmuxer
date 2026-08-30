@@ -1,5 +1,6 @@
 # name|expected|captured frame (printf %b escapes)
 standard_empty|empty|status\n\342\200\272\033[0m\033[49m  \033[2mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project
+current_ask_codex_empty|empty|status\n\033[1m\342\200\272\033[0m \033[2mAsk Codex to do anything\033[0m\n\n  gpt-5.6-sol medium · /workspace/project
 ultra_empty_rgb|empty|status\n\302\273\033[0m\033[48;2;12;34;56m \033[2mSummarize recent commits\n\n  gpt-5.6-sol ultra · /workspace/project
 formatted_standard_empty|empty|status\n \033[1m\342\200\272\033[22m \033[2mWrite tests for @filename\n\n  gpt-5.6-sol max · /workspace/project
 codex_0147_empty_with_footer|empty|\033[2mCodex welcome\n\033[0;1m\033[39m\033[49m\342\200\272\033[0m\033[39m\033[49m \033[2mWrite tests for @filename\n\n\033[0m\033[39m\033[49m  gpt-5.6-sol default · /workspace/project
