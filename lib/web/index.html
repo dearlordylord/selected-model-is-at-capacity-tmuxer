@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex 续跑监控</title>
+<style>
+:root {
+  --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+  --accent: #2563eb; --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --idle: #6b7280;
+  --pre: #0f172a; --pre-text: #e2e8f0;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; --card: #181b22; --text: #e5e7eb; --muted: #9ca3af; --line: #2a2f3a;
+    --accent: #60a5fa; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --idle: #9ca3af;
+    --pre: #0b0d11; --pre-text: #cbd5e1;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+header h1 { font-size: 18px; margin: 0; flex: 1; }
+main { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+section h2 { margin: 0 0 10px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.small { padding: 2px 8px; font-size: 12px; }
+.muted { color: var(--muted); font-size: 12px; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  border: 1px solid currentColor; white-space: nowrap; }
+.WORKING { color: var(--ok); } .CAPACITY { color: var(--bad); }
+.STOPPED { color: var(--warn); } .GONE { color: var(--idle); }
+.sessions { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.session { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.session.on { border-color: var(--accent); }
+.session .name { font-weight: 600; word-break: break-all; }
+.tag { font-size: 11px; padding: 0 6px; border-radius: 4px; background: var(--accent); color: #fff; }
+.panes { display: grid; gap: 12px; }
+.pane { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.pane-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pane-head .target { font-weight: 700; font-family: ui-monospace, Menlo, monospace; }
+.pane-head .grow { flex: 1; }
+.kv { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; font-size: 13px; }
+.kv b { font-weight: 600; }
+details pre { background: var(--pre); color: var(--pre-text); padding: 8px; border-radius: 4px;
+  overflow-x: auto; font-size: 12px; margin: 6px 0 0; }
+form.cfg { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 16px; }
+form.cfg label { display: grid; gap: 3px; font-size: 13px; }
+form.cfg input, form.cfg select { font: inherit; padding: 4px 8px; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--bg); color: var(--text); width: 100%; }
+#logs { max-height: 260px; overflow-y: auto; font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  white-space: pre-wrap; margin: 0; }
+#err { color: var(--bad); }
+.empty { color: var(--muted); padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Codex 续跑监控</h1>
+  <span id="run-state" class="pill"></span>
+  <button id="toggle-run"></button>
+  <span class="muted" id="clock"></span>
+</header>
+<main>
+  <div id="err"></div>
+
+  <section>
+    <h2>tmux 会话 <span class="muted">勾选要监控的会话（带 Codex 标签的为自动检测到的 Codex 会话）</span></h2>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button id="refresh">刷新列表</button>
+      <button id="auto">选中全部 Codex 会话</button>
+      <button id="none">全部取消</button>
+    </div>
+    <div class="sessions" id="sessions"></div>
+  </section>
+
+  <section>
+    <h2>任务状态 <span class="muted">停止超过阈值后随机等待，再发送续跑文本</span></h2>
+    <div class="panes" id="panes"></div>
+  </section>
+
+  <section>
+    <h2>参数设置</h2>
+    <form class="cfg" id="cfg">
+      <label>停止判定阈值（秒）<input name="stop_threshold" type="number" min="0"></label>
+      <label>随机等待下限（秒）<input name="wait_min" type="number" min="0"></label>
+      <label>随机等待上限（秒）<input name="wait_max" type="number" min="0"></label>
+      <label>扫描间隔（秒）<input name="poll" type="number" min="1"></label>
+      <label>发送文本<input name="send_text" type="text"></label>
+      <label>触发条件
+        <select name="trigger">
+          <option value="any">任何停止（空闲 / 容量错误）</option>
+          <option value="capacity">仅 “模型容量不足” 错误</option>
+        </select>
+      </label>
+      <label>输入框保护
+        <select name="guard_composer">
+          <option value="true">开启：输入框有内容时不发送</option>
+          <option value="false">关闭</option>
+        </select>
+      </label>
+      <label>检测窗口（底部行数）<input name="window" type="number" min="1"></label>
+      <label>工作中标识（正则）<input name="busy_re" type="text"></label>
+      <label>容量错误标识（正则）<input name="cap_re" type="text"></label>
+      <div style="display:flex;align-items:end"><button class="primary" type="submit">保存设置</button></div>
+    </form>
+  </section>
+
+  <section>
+    <h2>日志</h2>
+    <pre id="logs"></pre>
+  </section>
+</main>
+<script>
+const STATE_NAMES = { WORKING: "工作中", CAPACITY: "容量不足已停止", STOPPED: "已停止", GONE: "已消失" };
+let snap = null, cfgDirty = false;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function dur(s) {
+  if (s == null) return "—";
+  if (s < 60) return s + " 秒";
+  const m = Math.floor(s / 60), r = s % 60;
+  return m < 60 ? `${m} 分 ${r} 秒` : `${Math.floor(m / 60)} 小时 ${m % 60} 分`;
+}
+
+async function api(path, body) {
+  const opt = body === undefined ? {} :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opt);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function act(path, body) {
+  try { render(await api(path, body)); document.getElementById("err").textContent = ""; }
+  catch (e) { document.getElementById("err").textContent = "操作失败：" + e.message; }
+}
+
+function renderSessions(s) {
+  const box = document.getElementById("sessions");
+  if (!s.sessions.length) { box.innerHTML = '<div class="empty">没有发现 tmux 会话。请先在 tmux 中启动 Codex。</div>'; return; }
+  box.innerHTML = s.sessions.map(x => `
+    <label class="session ${x.selected ? "on" : ""}">
+      <input type="checkbox" data-session="${esc(x.name)}" ${x.selected ? "checked" : ""}>
+      <span class="name">${esc(x.name)}</span>
+      ${x.is_codex ? '<span class="tag">Codex</span>' : ""}
+      <span class="muted">${x.windows} 窗口${x.attached ? " · 已连接" : ""}</span>
+    </label>`).join("");
+}
+
+function renderPanes(s) {
+  const box = document.getElementById("panes");
+  if (!s.panes.length) { box.innerHTML = '<div class="empty">尚未选择会话。</div>'; return; }
+  box.innerHTML = s.panes.map(p => {
+    let plan = "—";
+    if (p.state === "WORKING") plan = "无需操作";
+    else if (!p.enabled) plan = "已禁用自动发送";
+    else if (!s.running) plan = "全局已暂停";
+    else if (p.send_in != null) plan = `${dur(p.send_in)} 后发送（本次随机等待 ${dur(p.wait_seconds)}）`;
+    else if (p.stopped_for != null) {
+      const left = s.config.stop_threshold - p.stopped_for;
+      plan = s.config.trigger === "capacity" && p.state !== "CAPACITY" ? "非容量错误，不触发"
+        : left > 0 ? `再停止 ${dur(left)} 后开始计划` : "即将计划发送";
+    }
+    return `<div class="pane">
+      <div class="pane-head">
+        <span class="target">${esc(p.target)}</span>
+        <span class="pill ${p.state}">${STATE_NAMES[p.state] || p.state}</span>
+        ${p.is_codex ? "" : '<span class="muted">（未识别为 Codex）</span>'}
+        <span class="grow"></span>
+        <label class="muted"><input type="checkbox" data-enable="${esc(p.target)}" ${p.enabled ? "checked" : ""}> 自动发送</label>
+        <button class="small" data-send="${esc(p.target)}">立即发送</button>
+      </div>
+      <div class="kv">
+        <span>已停止：<b>${dur(p.stopped_for)}</b></span>
+        <span>计划：<b>${esc(plan)}</b></span>
+        <span>已发送：<b>${p.send_count} 次</b>${p.last_sent_ago != null ? `（${dur(p.last_sent_ago)}前）` : ""}</span>
+        <span>进程：<b>${esc(p.command)}</b></span>
+      </div>
+      ${p.detail ? `<div class="muted">${esc(p.detail)}</div>` : ""}
+      ${p.note ? `<div class="muted">最近动作：${esc(p.note)}</div>` : ""}
+      <details data-target="${esc(p.target)}" ${openPreviews.has(p.target) ? "open" : ""}>
+        <summary class="muted">屏幕预览</summary><pre>${esc(p.preview)}</pre></details>
+    </div>`;
+  }).join("");
+}
+
+const openPreviews = new Set();
+
+function renderConfig(s) {
+  if (cfgDirty) return;
+  const f = document.getElementById("cfg");
+  for (const [k, v] of Object.entries(s.config)) {
+    if (f.elements[k]) f.elements[k].value = String(v);
+  }
+}
+
+function render(s) {
+  snap = s;
+  const rs = document.getElementById("run-state");
+  rs.textContent = s.running ? "自动续跑：运行中" : "自动续跑：已暂停";
+  rs.className = "pill " + (s.running ? "WORKING" : "STOPPED");
+  document.getElementById("toggle-run").textContent = s.running ? "暂停自动发送" : "启动自动发送";
+  document.getElementById("clock").textContent = "更新于 " + new Date(s.now * 1000).toLocaleTimeString();
+  renderSessions(s); renderPanes(s); renderConfig(s);
+  const logs = document.getElementById("logs");
+  logs.textContent = s.logs.slice().reverse().join("\n") || "暂无日志";
+}
+
+document.getElementById("toggle-run").onclick = () => act("/api/running", { running: !snap.running });
+document.getElementById("refresh").onclick = () => act("/api/refresh", {});
+document.getElementById("auto").onclick = () => act("/api/auto-select", {});
+document.getElementById("none").onclick = () => act("/api/select", { sessions: [] });
+document.getElementById("sessions").onchange = e => {
+  const names = [...document.querySelectorAll("[data-session]")].filter(c => c.checked).map(c => c.dataset.session);
+  act("/api/select", { sessions: names });
+};
+document.getElementById("panes").addEventListener("click", e => {
+  const t = e.target.dataset.send;
+  if (t && confirm(`立即向 ${t} 发送 “${snap.config.send_text}”？`)) act("/api/pane/send", { target: t });
+});
+document.getElementById("panes").addEventListener("change", e => {
+  const t = e.target.dataset.enable;
+  if (t) act("/api/pane/enabled", { target: t, enabled: e.target.checked });
+});
+document.getElementById("panes").addEventListener("toggle", e => {
+  const t = e.target.dataset && e.target.dataset.target;
+  if (t) e.target.open ? openPreviews.add(t) : openPreviews.delete(t);
+}, true);
+const cfgForm = document.getElementById("cfg");
+cfgForm.addEventListener("input", () => { cfgDirty = true; });
+cfgForm.onsubmit = async e => {
+  e.preventDefault();
+  const body = {};
+  for (const el of cfgForm.elements) {
+    if (!el.name) continue;
+    body[el.name] = el.type === "number" ? Number(el.value)
+      : el.name === "guard_composer" ? el.value === "true" : el.value;
+  }
+  cfgDirty = false;
+  await act("/api/config", body);
+};
+
+async function poll() {
+  try { render(await api("/api/state")); }
+  catch (e) { document.getElementById("err").textContent = "无法连接监控服务：" + e.message; }
+  setTimeout(poll, 2000);
+}
+poll();
+</script>
+</body>
+</html>
