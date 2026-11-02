@@ -146,6 +146,22 @@ All tunables are environment variables:
   `GUARD_COMPOSER=0` (you lose the half-typed-prompt protection) or add a prompt
   strategy and captured-frame fixture.
 
+## Windows / pure-Python version
+
+`bin/capacity-tmuxer.py` is a pure-Python (3.8+, stdlib only) port of the bash
+script, so it runs where `bash`, `grep`, `sed`, etc. are missing. It accepts the
+same arguments and environment variables, plus a `web` subcommand for the
+Chinese web UI. tmux is located via `TMUX_CMD`, then `tmux`, then `psmux` on
+PATH, then `wsl -e tmux` on Windows.
+
+```powershell
+.\bin\capacity-tmuxer-web.ps1 --auto        # web UI at http://127.0.0.1:8765
+.\bin\capacity-tmuxer.ps1 43 44             # watch mode
+$env:TMUX_CMD = "wsl -e tmux"                # use tmux inside WSL
+```
+
+`bin\capacity-tmuxer.cmd` / `bin\capacity-tmuxer-web.cmd` do the same from cmd.exe.
+
 ## Tests
 
 The composer classifier is exercised independently of tmux using captured ANSI
@@ -153,6 +169,9 @@ frames:
 
 ```sh
 bash test/composer-guard-test.bash
+python3 test/composer-guard-test.py     # Python port, same fixtures
+python3 test/codex-monitor-test.py
+python3 test/capacity-tmuxer-test.py
 ```
 
 ## License

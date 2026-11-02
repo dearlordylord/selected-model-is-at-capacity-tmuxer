@@ -19,7 +19,9 @@
 再发送 `continue`。
 
 除了 `bash`、`tmux` 和标准 Unix 工具（Web 界面另需 Python 3，仅使用标准库）外
-没有其他依赖。它从不改动 Codex 本身，只通过 `tmux capture-pane` 读取画面，
+没有其他依赖。**Windows 用户**可以使用纯 Python 版本（不需要 bash、grep、sed 等
+命令），在 PowerShell 中配合 tmux / psmux / WSL 中的 tmux 运行，详见
+[Windows 支持](#windows-支持)。它从不改动 Codex 本身，只通过 `tmux capture-pane` 读取画面，
 通过 `tmux send-keys` 输入文本。
 
 ## 演示
@@ -38,7 +40,7 @@ tmux 回滚缓冲区里。这意味着 tmux 能读取 Codex 正在显示的画�
 - `tmux`
 - `bash`
 - 标准 Unix 工具（`date`、`dirname`、`grep`、`readlink`、`sed`、`sleep`、`tail`）
-- Python 3（仅 Web 界面需要，无第三方依赖）
+- Python 3.8+（Web 界面与 Python 版需要，无第三方依赖）
 - 运行在 tmux pane **内部** 的 Codex CLI
 
 ## 安装
@@ -46,11 +48,75 @@ tmux 回滚缓冲区里。这意味着 tmux 能读取 Codex 正在显示的画�
 ```sh
 git clone https://github.com/dearlordylord/selected-model-is-at-capacity-tmuxer.git
 cd selected-model-is-at-capacity-tmuxer
-chmod +x bin/capacity-tmuxer bin/capacity-tmuxer-web
+chmod +x bin/capacity-tmuxer bin/capacity-tmuxer-web bin/capacity-tmuxer.py
 # 可选：加入 PATH
 ln -s "$PWD/bin/capacity-tmuxer" ~/.local/bin/capacity-tmuxer
 ln -s "$PWD/bin/capacity-tmuxer-web" ~/.local/bin/capacity-tmuxer-web
 ```
+
+## Windows 支持
+
+Windows 下很多命令（`bash`、`grep`、`sed`、`tail` 等）不存在，因此提供了一个
+**纯 Python 版本**，功能与 bash 版相同，只需要：
+
+- Python 3.8+（[python.org](https://www.python.org/downloads/) 或
+  `winget install Python.Python.3.12`）
+- 以下任意一种 tmux：
+  - **WSL 中的 tmux**（推荐）：在 WSL 里用 tmux 运行 Codex，Windows 端会自动通过
+    `wsl -e tmux` 访问；
+  - **MSYS2 / Cygwin / Git Bash 中的 tmux**：`tmux.exe` 在 PATH 中即可；
+  - **psmux** 等 Windows 原生、兼容 tmux 命令的实现（需支持 `list-panes -F`、
+    `capture-pane -p -e`、`send-keys`）。
+
+tmux 命令按以下顺序自动查找：环境变量 `TMUX_CMD` → PATH 中的 `tmux` → `psmux`
+→ `wsl -e tmux`。也可以手动指定：
+
+```powershell
+$env:TMUX_CMD = "wsl -e tmux"
+$env:TMUX_CMD = "C:\msys64\usr\bin\tmux.exe"
+```
+
+在 PowerShell 中使用：
+
+```powershell
+git clone https://github.com/dearlordylord/selected-model-is-at-capacity-tmuxer.git
+cd selected-model-is-at-capacity-tmuxer
+
+# 中文 Web 界面（推荐），然后打开 http://127.0.0.1:8765
+.\bin\capacity-tmuxer-web.ps1 --auto
+
+# 命令行监控（与 bash 版相同的参数和环境变量）
+.\bin\capacity-tmuxer.ps1 43 44
+$env:POLL = "10"; .\bin\capacity-tmuxer.ps1 my-agent
+
+# 状态面板
+.\bin\capacity-tmuxer.ps1 --status-pane 43 44
+```
+
+如果提示"无法加载文件，因为在此系统上禁止运行脚本"，可以只对本次运行放开：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\bin\capacity-tmuxer-web.ps1 --auto
+```
+
+cmd.exe 下可用 `bin\capacity-tmuxer.cmd` / `bin\capacity-tmuxer-web.cmd`；
+也可以直接用 Python 运行（任何平台通用）：
+
+```sh
+python bin/capacity-tmuxer.py 43 44            # 命令行监控
+python bin/capacity-tmuxer.py --status-pane 43 # 状态面板
+python bin/capacity-tmuxer.py web --auto       # Web 界面
+```
+
+| 文件 | 用途 |
+|---|---|
+| `bin/capacity-tmuxer` | 原 bash 版（Linux / macOS） |
+| `bin/capacity-tmuxer.py` | Python 版入口（全平台），`web` 子命令启动 Web 界面 |
+| `bin/capacity-tmuxer.ps1`、`bin/capacity-tmuxer-web.ps1` | PowerShell 启动脚本 |
+| `bin/capacity-tmuxer.cmd`、`bin/capacity-tmuxer-web.cmd` | cmd.exe 启动脚本 |
+| `bin/capacity-tmuxer-web` | Web 界面（Linux / macOS） |
+| `lib/composer_guard.py` | 输入框保护的 Python 移植，与 bash 版共用测试样例 |
+| `lib/tmux_backend.py` | 跨平台 tmux 调用（自动识别 tmux / psmux / WSL） |
 
 ## Web 界面（推荐）
 
@@ -83,6 +149,7 @@ capacity-tmuxer-web --auto
 | `--paused` | 启动时暂停自动发送（只显示状态） |
 | `--host` | 监听地址，默认 `127.0.0.1`（环境变量 `WEB_HOST`） |
 | `--port` | 监听端口，默认 `8765`（环境变量 `WEB_PORT`） |
+| `TMUX_CMD` | 环境变量，指定 tmux 命令（见 Windows 支持） |
 
 后台运行：
 
@@ -203,13 +270,17 @@ PANE                STATE      DETAIL
 
 ## 测试
 
-输入框分类器使用抓取的 ANSI 画面独立于 tmux 进行测试；Web 监控逻辑使用模拟的
-tmux 与时钟进行测试：
+输入框分类器使用抓取的 ANSI 画面独立于 tmux 进行测试（bash 版与 Python 版共用
+同一套样例）；Web 监控逻辑与 Python 版命令行使用模拟的 tmux 与时钟进行测试：
 
 ```sh
-bash test/composer-guard-test.bash
-python3 test/codex-monitor-test.py
+bash test/composer-guard-test.bash      # bash 版输入框保护
+python3 test/composer-guard-test.py     # Python 版输入框保护（Windows 可用）
+python3 test/codex-monitor-test.py      # Web 监控逻辑
+python3 test/capacity-tmuxer-test.py    # Python 版命令行与 tmux 识别
 ```
+
+Windows 下把 `python3` 换成 `python` 或 `py -3` 即可。
 
 ## 许可证
 

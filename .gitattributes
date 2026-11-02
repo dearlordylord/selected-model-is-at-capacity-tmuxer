@@ -1,0 +1,8 @@
+# Windows 启动脚本使用 CRLF；PowerShell 脚本带 UTF-8 BOM（兼容 Windows PowerShell 5.1）
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf
+*.bash text eol=lf
+*.py  text eol=lf
+bin/capacity-tmuxer     text eol=lf
+bin/capacity-tmuxer-web text eol=lf

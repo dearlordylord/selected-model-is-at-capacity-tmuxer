@@ -1,20 +1,17 @@
 """codex_monitor — 监控 tmux 中的 Codex 任务，停止后随机等待再发送 continue。
 
-纯标准库实现。核心逻辑（Monitor.tick）与 tmux 调用（Tmux）分离，
+纯标准库实现（Python 3.8+，Linux / macOS / Windows 通用）。核心逻辑（Monitor.tick）与 tmux 调用（Tmux）分离，
 时钟与随机数均可注入，便于测试。
 """
 
 import hashlib
-import os
 import random
 import re
-import subprocess
 import threading
 import time
 from collections import deque
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COMPOSER_GUARD = os.path.join(ROOT, "lib", "composer-guard.bash")
+from tmux_backend import Tmux  # noqa: F401  (re-exported for callers)
 
 # 状态常量
 WORKING = "WORKING"      # Codex 正在工作（检测到 esc to interrupt）
@@ -36,69 +33,6 @@ DEFAULT_CONFIG = {
     "codex_re": r"OpenAI Codex|esc to interrupt|context left|"
                 r"Selected model is at capacity|^\s*[›»] ",
 }
-
-
-class Tmux:
-    """对 tmux 命令的薄封装。"""
-
-    def _run(self, *args):
-        try:
-            res = subprocess.run(["tmux", *args], capture_output=True,
-                                 text=True, timeout=10)
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if res.returncode != 0:
-            return None
-        return res.stdout
-
-    def list_sessions(self):
-        out = self._run("list-sessions", "-F",
-                        "#{session_name}\t#{session_windows}\t#{session_attached}")
-        sessions = []
-        for line in (out or "").splitlines():
-            parts = line.split("\t")
-            if len(parts) == 3:
-                sessions.append({"name": parts[0], "windows": int(parts[1] or 0),
-                                 "attached": parts[2] not in ("", "0")})
-        return sessions
-
-    def list_panes(self):
-        out = self._run("list-panes", "-a", "-F",
-                        "#{session_name}\t#{session_name}:#{window_index}.#{pane_index}"
-                        "\t#{pane_current_command}")
-        panes = []
-        for line in (out or "").splitlines():
-            parts = line.split("\t")
-            if len(parts) == 3:
-                panes.append({"session": parts[0], "target": parts[1],
-                              "command": parts[2]})
-        return panes
-
-    def capture(self, target, ansi=False):
-        args = ["capture-pane", "-p", "-t", target]
-        if ansi:
-            args.insert(1, "-e")
-        return self._run(*args)
-
-    def send(self, target, text):
-        if self._run("send-keys", "-t", target, "-l", text) is None:
-            return False
-        time.sleep(0.4)  # 让输入框稳定后再回车
-        return self._run("send-keys", "-t", target, "Enter") is not None
-
-    def composer_is_empty(self, target):
-        """调用 lib/composer-guard.bash 判断输入框是否为空（失败即视为非空）。"""
-        frame = self.capture(target, ansi=True)
-        if frame is None:
-            return False
-        try:
-            res = subprocess.run(
-                ["bash", "-c", '. "$1"; composer_frame_is_empty "$2"', "_",
-                 COMPOSER_GUARD, frame.rstrip("\n")],
-                capture_output=True, timeout=20)
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-        return res.returncode == 0
 
 
 def classify(text, cfg):

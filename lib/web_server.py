@@ -1,0 +1,130 @@
+r"""web_server — Codex 自动续跑监控的中文 Web 界面（Linux / macOS / Windows）。
+
+用法: capacity-tmuxer-web [--host 127.0.0.1] [--port 8765] [--auto] [会话名 ...]
+     Windows: .\bin\capacity-tmuxer-web.ps1 --auto
+
+  会话名      启动时即监控的 tmux 会话
+  --auto      启动时自动选中所有检测到 Codex 的会话
+  --paused    启动时不自动发送（只显示状态）
+
+打开 http://127.0.0.1:8765 即可在页面上选择会话、查看状态、修改参数。
+仅依赖 Python 3.8+ 标准库与 tmux（或 psmux / WSL 中的 tmux）。
+"""
+
+import argparse
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+import codex_monitor
+import tmux_backend
+
+PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")
+
+
+def make_handler(monitor):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):  # 静默访问日志
+            pass
+
+        def _json(self, obj, status=200):
+            body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _body(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            if not length:
+                return {}
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+
+        def do_GET(self):
+            if self.path in ("/", "/index.html"):
+                with open(PAGE, "rb") as f:
+                    body = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            elif self.path == "/api/state":
+                self._json(monitor.snapshot())
+            else:
+                self._json({"error": "未找到"}, 404)
+
+        def do_POST(self):
+            # 简单的 CSRF 防护：只接受 JSON 请求
+            if "application/json" not in (self.headers.get("Content-Type") or ""):
+                return self._json({"error": "需要 application/json"}, 415)
+            try:
+                data = self._body()
+                if self.path == "/api/refresh":
+                    monitor.refresh()
+                elif self.path == "/api/select":
+                    monitor.select(data.get("sessions", []))
+                    monitor.refresh()
+                elif self.path == "/api/auto-select":
+                    monitor.auto_select()
+                elif self.path == "/api/running":
+                    monitor.set_running(data.get("running", True))
+                elif self.path == "/api/config":
+                    monitor.update_config(data)
+                elif self.path == "/api/pane/enabled":
+                    monitor.set_pane_enabled(data["target"], data.get("enabled", True))
+                elif self.path == "/api/pane/send":
+                    monitor.send_now(data["target"])
+                    monitor.refresh()
+                else:
+                    return self._json({"error": "未找到"}, 404)
+            except KeyError as exc:
+                return self._json({"error": f"找不到 pane: {exc}"}, 404)
+            except (ValueError, TypeError) as exc:
+                return self._json({"error": str(exc)}, 400)
+            self._json(monitor.snapshot())
+
+    return Handler
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Codex 自动续跑监控 Web 界面")
+    ap.add_argument("sessions", nargs="*", help="启动时即监控的 tmux 会话")
+    ap.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
+    ap.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "8765")))
+    ap.add_argument("--auto", action="store_true", help="自动选中检测到 Codex 的会话")
+    ap.add_argument("--paused", action="store_true", help="启动时暂停自动发送")
+    args = ap.parse_args(argv)
+
+    tmux_backend.enable_windows_ansi()
+    tmux = tmux_backend.Tmux()
+    if not tmux.available:
+        print("错误: 找不到 tmux（可安装 tmux / psmux，或在 WSL 中安装 tmux，"
+              "也可用环境变量 TMUX_CMD 指定）", file=sys.stderr)
+        return 127
+    print("使用 tmux 命令:", tmux_backend.describe(tmux.cmd), flush=True)
+
+    monitor = codex_monitor.Monitor(tmux=tmux)
+    if args.sessions:
+        monitor.select(args.sessions)
+    if args.auto:
+        found = monitor.auto_select()
+        print("自动选中会话:", " ".join(found) or "(无)", flush=True)
+    if args.paused:
+        monitor.set_running(False)
+    monitor.start()
+
+    server = ThreadingHTTPServer((args.host, args.port), make_handler(monitor))
+    print(f"capacity-tmuxer-web 已启动: http://{args.host}:{args.port}", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        monitor.stop()
+        server.server_close()
+    return 0
