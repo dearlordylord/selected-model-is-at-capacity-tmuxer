@@ -27,3 +27,23 @@ dim_prompt_shaped_history_with_footer_like_text|nonempty|\342\200\272 \033[2mPre
 dim_prompt_shaped_row_with_blank_and_footer|nonempty|\342\200\272 \033[2mHelp text\n\n  gpt-5.6-sol default · /workspace/project
 oversized_sgr_wraps_to_faint|nonempty|\342\200\272 \033[18446744073709551618mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project
 oversized_rgb_mode_wraps_to_two|nonempty|\342\200\272 \033[48;18446744073709551618;1;2;3m \033[2mExplain this codebase\n\n  gpt-5.6-sol default · /workspace/project
+standard_home_path_default|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol default · ~/Desktop/project
+ultra_home_path_default|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol default · ~/Desktop/project
+standard_home_path_low|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol low · ~/Desktop/project
+ultra_home_path_low|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol low · ~/Desktop/project
+standard_home_path_medium|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol medium · ~/Desktop/project
+ultra_home_path_medium|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol medium · ~/Desktop/project
+standard_home_path_high|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol high · ~/Desktop/project
+ultra_home_path_high|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol high · ~/Desktop/project
+standard_home_path_xhigh|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol xhigh · ~/Desktop/project
+ultra_home_path_xhigh|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol xhigh · ~/Desktop/project
+standard_home_path_max|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · ~/Desktop/project
+ultra_home_path_max|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · ~/Desktop/project
+standard_home_path_ultra|empty|status\n\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol ultra · ~/Desktop/project
+ultra_home_path_ultra|empty|status\n\302\273\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol ultra · ~/Desktop/project
+home_path_with_spaces|empty|\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · ~/Desktop/my project
+home_path_typed_draft|nonempty|\342\200\272 draft response\n\n  gpt-5.6-sol max · ~/Desktop/project
+home_path_missing_blank_row|nonempty|\342\200\272\033[0m \033[2mExplain this codebase\n  gpt-5.6-sol max · ~/Desktop/project
+home_path_trailing_menu|nonempty|\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · ~/Desktop/project\nmenu item
+relative_path_footer|nonempty|\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · Desktop/project
+other_user_home_footer|nonempty|\342\200\272\033[0m \033[2mExplain this codebase\n\n  gpt-5.6-sol max · ~other/Desktop/project
