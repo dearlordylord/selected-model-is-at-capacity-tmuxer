@@ -295,7 +295,9 @@ composer_codex_context_matches() {
       2)
         case "$plain" in
           *' default · /'*|*' low · /'*|*' medium · /'*|*' high · /'*|\
-          *' xhigh · /'*|*' max · /'*|*' ultra · /'*) footer_seen=1 ;;
+          *' xhigh · /'*|*' max · /'*|*' ultra · /'*|\
+          *' default · ~/'*|*' low · ~/'*|*' medium · ~/'*|*' high · ~/'*|\
+          *' xhigh · ~/'*|*' max · ~/'*|*' ultra · ~/'*) footer_seen=1 ;;
           *) return 1 ;;
         esac
         ;;
