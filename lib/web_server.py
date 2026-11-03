@@ -80,6 +80,9 @@ def make_handler(monitor):
                 elif self.path == "/api/pane/send":
                     monitor.send_now(data["target"])
                     monitor.refresh()
+                elif self.path == "/api/send-all":
+                    monitor.send_all()
+                    monitor.refresh()
                 else:
                     return self._json({"error": "未找到"}, 404)
             except KeyError as exc:

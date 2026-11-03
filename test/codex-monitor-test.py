@@ -181,6 +181,24 @@ class MonitorTest(unittest.TestCase):
         self.m.update_config({"wait_min": 10, "wait_max": 20})
         self.assertEqual(self.m.config["wait_max"], 20)
 
+    def test_send_all_skips_working_and_unselected(self):
+        self.tmux.frames["a:1.0"] = IDLE_FRAME
+        self.tmux.frames["a:2.0"] = CAP_FRAME
+        self.tmux.frames["b:0.0"] = IDLE_FRAME      # 未选中的会话
+        self.tmux.commands["a:1.0"] = "codex"
+        self.m.tick()
+        sent = self.m.send_all()
+        self.assertEqual(sorted(sent), ["a:1.0", "a:2.0"])   # a:0.0 工作中，b 未选中
+        self.assertEqual(sorted(t for t, _ in self.tmux.sent), ["a:1.0", "a:2.0"])
+        self.assertEqual(self.m.panes["a:1.0"].send_count, 1)
+
+    def test_send_all_respects_composer_guard(self):
+        self.tmux.composer_empty = False
+        self.tmux.frames["a:1.0"] = IDLE_FRAME
+        self.m.tick()
+        self.assertEqual(self.m.send_all(), [])
+        self.assertEqual(self.tmux.sent, [])
+
     def test_snapshot_lists_selected_panes(self):
         self.tmux.frames["b:0.0"] = IDLE_FRAME
         self.m.tick()

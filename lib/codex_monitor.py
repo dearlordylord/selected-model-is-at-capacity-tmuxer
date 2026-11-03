@@ -190,6 +190,19 @@ class Monitor:
                 raise KeyError(target)
             return self._send(pane, self.clock(), manual=True)
 
+    def send_all(self):
+        """立即向所有监控中、且未在工作的任务发送文本；返回发送成功的 pane 列表。"""
+        sent = []
+        with self.lock:
+            targets = [p for p in sorted(self.panes.values(), key=lambda p: p.target)
+                       if p.session in self.selected and p.state in (STOPPED, CAPACITY)]
+            for pane in targets:
+                if self._send(pane, self.clock(), manual=True):
+                    sent.append(pane.target)
+            if not targets:
+                self.log("没有可发送的任务（均在工作中或已消失）")
+        return sent
+
     # ---- 扫描 ---------------------------------------------------------------
     def refresh(self):
         """刷新 tmux 会话/pane 列表，并对每个 pane 做状态分类。"""

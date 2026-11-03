@@ -83,6 +83,9 @@ form.cfg input, form.cfg select { font: inherit; padding: 4px 8px; border: 1px s
 
   <section>
     <h2>任务状态 <span class="muted">停止超过阈值后随机等待，再发送续跑文本</span></h2>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <button id="send-all" title="向所有监控中且未在工作的任务立即发送">全部立即发送</button>
+    </div>
     <div class="panes" id="panes"></div>
   </section>
 
@@ -222,6 +225,10 @@ document.getElementById("none").onclick = () => act("/api/select", { sessions: [
 document.getElementById("sessions").onchange = e => {
   const names = [...document.querySelectorAll("[data-session]")].filter(c => c.checked).map(c => c.dataset.session);
   act("/api/select", { sessions: names });
+};
+document.getElementById("send-all").onclick = () => {
+  const n = snap ? snap.panes.filter(p => p.state === "STOPPED" || p.state === "CAPACITY").length : 0;
+  if (n && confirm(`立即向 ${n} 个未在工作的任务发送 “${snap.config.send_text}”？`)) act("/api/send-all", {});
 };
 document.getElementById("panes").addEventListener("click", e => {
   const t = e.target.dataset.send;
