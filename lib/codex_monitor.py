@@ -26,7 +26,7 @@ DEFAULT_CONFIG = {
     "wait_max": 300,              # 随机等待上限（秒）
     "send_text": "continue",      # 发送的文本
     "trigger": "any",             # any = 任何停止；capacity = 仅容量错误
-    "guard_composer": True,       # 输入框非空时不发送
+    "composer_quiet": 20,         # 输入框内容在最近多少秒内有变化则跳过发送（0 = 不检查）
     "window": 20,                 # 底部多少行算"当前"
     "busy_re": r"esc to interrupt",
     "cap_re": r"Selected model is at capacity",
@@ -56,6 +56,30 @@ def looks_like_codex(command, text, cfg):
     return bool(text and re.search(cfg["codex_re"], text, re.I | re.M))
 
 
+COMPOSER_ROW_RE = re.compile(r"^\s*[›»]")
+
+
+def extract_composer(text):
+    """取画面中最后一个提示符行及其后连续的非空行，作为"输入框内容"。
+
+    找不到提示符行时返回 None。页脚（空行之后）不计入，避免上下文百分比等变化干扰。
+    """
+    lines = text.rstrip("\n").split("\n")
+    start = None
+    for i in range(len(lines) - 1, -1, -1):
+        if COMPOSER_ROW_RE.match(lines[i]):
+            start = i
+            break
+    if start is None:
+        return None
+    rows = []
+    for line in lines[start:]:
+        if not line.strip():
+            break
+        rows.append(line.rstrip())
+    return "\n".join(rows)
+
+
 class PaneState:
     def __init__(self, target, session):
         self.target = target
@@ -66,6 +90,9 @@ class PaneState:
         self.detail = ""
         self.enabled = True          # 是否对该 pane 自动发送
         self.last_hash = None
+        self.composer_text = None    # 最近一次观察到的输入框内容
+        self.composer_seen = False   # 是否已观察过输入框（首次观察不算"变化"）
+        self.composer_changed_at = None  # 输入框内容最近一次变化的时间
         self.stopped_since = None    # 本轮停止开始时间
         self.next_send_at = None     # 计划发送时间
         self.wait_seconds = None     # 本次随机等待时长
@@ -91,6 +118,8 @@ class PaneState:
             else int(self.wait_seconds),
             "last_sent_ago": None if self.last_sent_at is None
             else int(now - self.last_sent_at),
+            "composer_quiet_for": None if self.composer_changed_at is None
+            else int(now - self.composer_changed_at),
             "send_count": self.send_count,
             "note": self.note,
             "preview": self.preview,
@@ -245,6 +274,7 @@ class Monitor:
         digest = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
         changed = digest != pane.last_hash
         pane.last_hash = digest
+        self._observe_composer(pane, text, now)
         pane.state, pane.detail = classify(text, cfg)
         if pane.state == WORKING:
             if pane.stopped_since is not None:
@@ -256,6 +286,14 @@ class Monitor:
             # 内容变化（例如用户在输入、或刚刚又报错）→ 重新计时
             pane.stopped_since = now
             pane.next_send_at = pane.wait_seconds = None
+
+    def _observe_composer(self, pane, text, now):
+        """记录输入框内容；内容与上次不同则更新"最近变化时间"。"""
+        current = extract_composer(text)
+        if pane.composer_seen and current != pane.composer_text:
+            pane.composer_changed_at = now
+        pane.composer_seen = True
+        pane.composer_text = current
 
     def tick(self):
         self.refresh()
@@ -282,13 +320,21 @@ class Monitor:
 
     def _send(self, pane, now, manual=False):
         cfg = self.config
-        if cfg["guard_composer"] and not self.tmux.composer_is_empty(pane.target):
-            pane.note = "输入框非空或无法确认，跳过发送"
-            self.log(f"{pane.target} {pane.note}")
-            if not manual:
-                pane.wait_seconds = self.rng.uniform(cfg["wait_min"], cfg["wait_max"])
-                pane.next_send_at = now + pane.wait_seconds
-            return False
+        quiet = cfg["composer_quiet"]
+        if quiet > 0:
+            # 发送前重新读取一次，保证判断基于最新的输入框内容
+            fresh = self.tmux.capture(pane.target)
+            if fresh is not None:
+                self._observe_composer(pane, fresh, now)
+            changed_at = pane.composer_changed_at
+            if changed_at is not None and now - changed_at < quiet:
+                pane.note = f"输入框内容在 {quiet} 秒内有变化，跳过发送"
+                self.log(f"{pane.target} {pane.note}")
+                if not manual:
+                    # 静默期结束后再检查一次
+                    pane.next_send_at = changed_at + quiet
+                    pane.wait_seconds = pane.next_send_at - now
+                return False
         ok = self.tmux.send(pane.target, cfg["send_text"])
         if ok:
             pane.send_count += 1

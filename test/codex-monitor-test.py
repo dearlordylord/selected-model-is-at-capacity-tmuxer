@@ -10,6 +10,7 @@ import codex_monitor as cm  # noqa: E402
 
 WORKING_FRAME = "› fix the bug\n\n• Working (12s • esc to interrupt)\n"
 IDLE_FRAME = "• Done.\n\n› Ask Codex to do anything\n"
+TYPED_FRAME = "• Done.\n\n› hello\n"
 CAP_FRAME = "■ Selected model is at capacity. Please try a different model.\n\n› Ask Codex\n"
 
 
@@ -18,7 +19,6 @@ class FakeTmux:
         self.frames = {"a:0.0": WORKING_FRAME}
         self.commands = {"a:0.0": "codex"}
         self.sent = []
-        self.composer_empty = True
 
     def list_sessions(self):
         names = sorted({t.split(":")[0] for t in self.frames})
@@ -34,9 +34,6 @@ class FakeTmux:
     def send(self, target, text):
         self.sent.append((target, text))
         return True
-
-    def composer_is_empty(self, target):
-        return self.composer_empty
 
 
 class FixedRng:
@@ -134,15 +131,71 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(self.pane().stopped_since, self.t)
         self.assertIsNone(self.pane().next_send_at)
 
-    def test_composer_guard_skips(self):
-        self.tmux.composer_empty = False
+    def start_idle_then_type(self):
+        """停止状态下，用户在输入框里打字（输入框内容发生变化）。"""
+        self.tmux.frames["a:0.0"] = IDLE_FRAME
+        self.advance(1)                      # 首次观察，不算变化
+        self.assertIsNone(self.pane().composer_changed_at)
+        self.tmux.frames["a:0.0"] = TYPED_FRAME
+        self.advance(5)
+        return self.t                        # 输入框内容变化的时间
+
+    def test_composer_changed_within_quiet_period_skips_manual_send(self):
+        changed = self.start_idle_then_type()
+        self.assertEqual(self.pane().composer_changed_at, changed)
+        self.assertFalse(self.m.send_now("a:0.0"))
+        self.assertEqual(self.tmux.sent, [])
+        self.assertIn("20 秒内有变化", self.pane().note)
+        self.advance(14)                     # 距变化 14s
+        self.assertFalse(self.m.send_now("a:0.0"))
+        self.advance(5)                      # 距变化 19s
+        self.assertFalse(self.m.send_now("a:0.0"))
+        self.advance(1)                      # 距变化 20s：静默期已过
+        self.assertTrue(self.m.send_now("a:0.0"))
+        self.assertEqual(self.tmux.sent, [("a:0.0", "continue")])
+
+    def test_unchanged_nonempty_composer_does_not_block(self):
+        # 输入框里有残留内容，但 20 秒内没变化 → 不再跳过
+        self.tmux.frames["a:0.0"] = TYPED_FRAME
+        self.advance(1)
+        self.advance(30)                     # 超过阈值，安排随机等待（120s）
+        self.advance(120)
+        self.assertEqual(len(self.tmux.sent), 1)   # 已自动发送
+
+    def test_quiet_zero_disables_check(self):
+        self.m.update_config({"composer_quiet": 0})
+        self.start_idle_then_type()
+        self.assertTrue(self.m.send_now("a:0.0"))
+
+    def test_quiet_period_is_configurable(self):
+        self.m.update_config({"composer_quiet": 60})
+        self.start_idle_then_type()
+        self.advance(30)
+        self.assertFalse(self.m.send_now("a:0.0"))
+        self.advance(30)
+        self.assertTrue(self.m.send_now("a:0.0"))
+
+    def test_auto_send_rechecks_after_quiet_period(self):
         self.tmux.frames["a:0.0"] = IDLE_FRAME
         self.advance(1)
-        self.advance(30)
-        self.advance(120)
+        # 计划发送前一刻输入框内容变了（发生在两次扫描之间）
+        self.tmux.frames["a:0.0"] = TYPED_FRAME
+        self.t += 3
+        with self.m.lock:
+            self.assertFalse(self.m._send(self.pane(), self.t))
         self.assertEqual(self.tmux.sent, [])
-        self.assertIn("跳过", self.pane().note)
-        self.assertIsNotNone(self.pane().next_send_at)  # 已重新随机安排
+        self.assertEqual(self.pane().next_send_at, self.t + 20)
+
+    def test_extract_composer(self):
+        self.assertEqual(cm.extract_composer(IDLE_FRAME), "› Ask Codex to do anything")
+        self.assertEqual(cm.extract_composer(TYPED_FRAME), "› hello")
+        multi = "x\n\n› line one\n  line two\n\n  gpt medium · /p 83% left\n"
+        self.assertEqual(cm.extract_composer(multi), "› line one\n  line two")
+        self.assertIsNone(cm.extract_composer("no prompt here\n"))
+        # 页脚变化不算输入框变化
+        a = cm.extract_composer("› hi\n\n  gpt medium · /p 83% left\n")
+        b = cm.extract_composer("› hi\n\n  gpt medium · /p 82% left\n")
+        self.assertEqual(a, b)
 
     def test_capacity_only_trigger(self):
         self.m.update_config({"trigger": "capacity"})
@@ -192,12 +245,14 @@ class MonitorTest(unittest.TestCase):
         self.assertEqual(sorted(t for t, _ in self.tmux.sent), ["a:1.0", "a:2.0"])
         self.assertEqual(self.m.panes["a:1.0"].send_count, 1)
 
-    def test_send_all_respects_composer_guard(self):
-        self.tmux.composer_empty = False
+    def test_send_all_skips_panes_being_typed_in(self):
         self.tmux.frames["a:1.0"] = IDLE_FRAME
+        self.tmux.frames["a:2.0"] = IDLE_FRAME
         self.m.tick()
-        self.assertEqual(self.m.send_all(), [])
-        self.assertEqual(self.tmux.sent, [])
+        self.tmux.frames["a:1.0"] = TYPED_FRAME      # 用户正在这个 pane 输入
+        self.advance(5)
+        self.assertEqual(self.m.send_all(), ["a:2.0"])
+        self.assertEqual(self.tmux.sent, [("a:2.0", "continue")])
 
     def test_snapshot_lists_selected_panes(self):
         self.tmux.frames["b:0.0"] = IDLE_FRAME

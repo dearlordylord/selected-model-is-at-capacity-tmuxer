@@ -103,11 +103,8 @@ form.cfg input, form.cfg select { font: inherit; padding: 4px 8px; border: 1px s
           <option value="capacity">仅 “模型容量不足” 错误</option>
         </select>
       </label>
-      <label>输入框保护
-        <select name="guard_composer">
-          <option value="true">开启：输入框有内容时不发送</option>
-          <option value="false">关闭</option>
-        </select>
+      <label>输入框静默时间（秒，0 为不检查）
+        <input name="composer_quiet" type="number" min="0" title="输入框内容在这段时间内有变化（你正在输入）则跳过发送">
       </label>
       <label>检测窗口（底部行数）<input name="window" type="number" min="1"></label>
       <label>工作中标识（正则）<input name="busy_re" type="text"></label>
@@ -185,6 +182,7 @@ function renderPanes(s) {
       <div class="kv">
         <span>已停止：<b>${dur(p.stopped_for)}</b></span>
         <span>计划：<b>${esc(plan)}</b></span>
+        <span>输入框：<b>${p.composer_quiet_for == null ? "未见变化" : dur(p.composer_quiet_for) + "前有变化"}</b></span>
         <span>已发送：<b>${p.send_count} 次</b>${p.last_sent_ago != null ? `（${dur(p.last_sent_ago)}前）` : ""}</span>
         <span>进程：<b>${esc(p.command)}</b></span>
       </div>
@@ -249,8 +247,7 @@ cfgForm.onsubmit = async e => {
   const body = {};
   for (const el of cfgForm.elements) {
     if (!el.name) continue;
-    body[el.name] = el.type === "number" ? Number(el.value)
-      : el.name === "guard_composer" ? el.value === "true" : el.value;
+    body[el.name] = el.type === "number" ? Number(el.value) : el.value;
   }
   cfgDirty = false;
   await act("/api/config", body);
